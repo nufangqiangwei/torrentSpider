@@ -6,8 +6,6 @@ require (
 	bazil.org/fuse v0.0.0-20200407214033-5883e5a4b512
 	crawshaw.io/sqlite v0.3.3-0.20210127221821-98b1f83c5508
 	github.com/alexflint/go-arg v1.3.0
-	github.com/allegro/bigcache/v2 v2.2.5 // indirect
-	github.com/allegro/bigcache/v3 v3.0.0
 	github.com/anacrolix/chansync v0.1.0
 	github.com/anacrolix/confluence v1.8.0
 	github.com/anacrolix/envpprof v1.1.1

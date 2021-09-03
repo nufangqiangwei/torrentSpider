@@ -1,4 +1,4 @@
-package main
+package timeWheel
 
 import (
 	"container/list"
@@ -20,19 +20,19 @@ import (
 月 1 - 12 12个刻度
 日 1 - 31 不等
 */
-type Roulette struct {
+type roulette struct {
 	name           string
 	slots          []*list.List  // 时间轮槽
 	slotNum        int64         // 槽数量
 	currentPos     int64         // 当前指针指向哪一个槽
 	isLastRoulette bool          // 最底层的时间轮盘,既最小刻度轮盘
 	taskKeyMap     map[int64]int // 任务在第几个槽中保存，只保存存在的，查不到就默认不存在
-	beforeRoulette *Roulette     // 上层的轮盘
-	afterRoulette  *Roulette     // 下层轮盘
+	beforeRoulette *roulette     // 上层的轮盘
+	afterRoulette  *roulette     // 下层轮盘
 }
 
-// Task 延时任务
-type Task struct {
+// task 延时任务
+type task struct {
 	delay        int64            // 延迟时间
 	rouletteSite map[string]int64 // 在每个时间轮的位置
 	key          int64            // 定时器唯一标识, 用于删除定时器
@@ -78,11 +78,11 @@ func getMonthDay(year, month int64) int64 {
 
 // 当前时间是否已经到达上限。
 // 到达上限后需要在上一个时间刻度+1
-func (r *Roulette) cycle() bool {
+func (r *roulette) cycle() bool {
 	/*
 		年 不考虑
 		月 12个月 最小数字 1 最大数字 12
-		日 每个月天数不等 Roulette.getMonthDay 这个方法获取 具体天数
+		日 每个月天数不等 roulette.getMonthDay 这个方法获取 具体天数
 		时 24个刻度 最小数字 0 最大数字 23
 		分 60个刻度 最小数字 0 最大数字 59
 		秒 60个刻度 最小数字 0 最大数字 59
@@ -103,7 +103,7 @@ func (r *Roulette) cycle() bool {
 相当于表盘中的秒针，每次都移动秒针，当秒针走完一圈就会带动分针走一格，依次类推
 指针指向的格子中，所有的任务全部超时
 */
-func (r *Roulette) tickHandler() {
+func (r *roulette) tickHandler() {
 	r.currentPos++
 	if r.cycle() {
 		// 刻度归零，先让上层的时间轮指针动起来，如果有分配task的情况，先分配到下层时间轮，这样如果有零点触发的任务就会执行了
@@ -133,16 +133,16 @@ func (r *Roulette) tickHandler() {
 }
 
 // 执行所有已到期的任务
-func (r Roulette) runTask(taskList list.List) {
+func (r roulette) runTask(taskList list.List) {
 	for e := taskList.Front(); e != nil; e = e.Next() {
-		task := e.Value.(*Task)
+		task := e.Value.(*task)
 		fmt.Println("执行回调函数")
 		go task.Job()
 	}
 }
 
 // 判断任务是否需要立即执行，不需要的话就在下层轮盘中放置任务
-func (r *Roulette) assignTask(tasks *list.List) {
+func (r *roulette) assignTask(tasks *list.List) {
 	if tasks == nil {
 		return
 	}
@@ -154,7 +154,7 @@ func (r *Roulette) assignTask(tasks *list.List) {
 	afterName := r.afterRoulette.name
 	runTaskList := list.New()
 	for e := tasks.Front(); e != nil; e = e.Next() {
-		task := e.Value.(*Task)
+		task := e.Value.(*task)
 		_, ok := task.rouletteSite[afterName]
 		if !ok {
 			//需要立即执行任务
@@ -162,11 +162,12 @@ func (r *Roulette) assignTask(tasks *list.List) {
 		}
 		// 放入下层轮盘中等待执行
 		r.afterRoulette.appendTask(task)
+		delete(r.taskKeyMap, task.key)
 	}
 }
 
 // 添加上层转交过来的函数
-func (r *Roulette) appendTask(task *Task) {
+func (r *roulette) appendTask(task *task) {
 	index, ok := task.rouletteSite[r.name]
 	if !ok {
 		go task.Job()
@@ -175,11 +176,12 @@ func (r *Roulette) appendTask(task *Task) {
 		r.slots[index] = list.New()
 	}
 	r.slots[index].PushBack(task)
+	r.taskKeyMap[task.key] = int(index)
 	fmt.Printf("%s轮盘落下一个任务\n", r.name)
 }
 
 // 删除尚未到期的任务
-func (r *Roulette) removeTask(taskKey int64) {
+func (r *roulette) removeTask(taskKey int64) {
 	taskIndex, ok := r.taskKeyMap[taskKey]
 	if !ok {
 		if r.isLastRoulette {
@@ -188,8 +190,11 @@ func (r *Roulette) removeTask(taskKey int64) {
 		r.afterRoulette.removeTask(taskKey)
 	}
 	l := r.slots[taskIndex]
+	if l == nil {
+		return
+	}
 	for e := l.Front(); e != nil; e = e.Next() {
-		task := e.Value.(*Task)
+		task := e.Value.(*task)
 		if task.key == taskKey {
 			l.Remove(e)
 		}
@@ -198,7 +203,7 @@ func (r *Roulette) removeTask(taskKey int64) {
 }
 
 //添加task 根据超时时间计算多久后执行任务 最大时间十年，超过十年会触发panic
-func (r *Roulette) addTask(task *Task) {
+func (r *roulette) addTask(task *task) {
 	/*
 			year 2021
 			month 8
@@ -251,9 +256,10 @@ func (r *Roulette) addTask(task *Task) {
 		r.slots[nowRouletteSite] = list.New()
 	}
 	r.slots[nowRouletteSite].PushBack(task)
+	r.taskKeyMap[task.key] = int(nowRouletteSite)
 }
 
-func newRoulette(model string, initPointer int64) *Roulette {
+func newRoulette(model string, initPointer int64) *roulette {
 	var (
 		slotNum        int64
 		isLastRoulette bool
@@ -276,7 +282,7 @@ func newRoulette(model string, initPointer int64) *Roulette {
 	} else {
 		panic("model类型错误")
 	}
-	return &Roulette{
+	return &roulette{
 		name:           model,
 		slots:          make([]*list.List, slotNum),
 		slotNum:        slotNum,
@@ -292,10 +298,10 @@ func newRoulette(model string, initPointer int64) *Roulette {
 type TimeWheel struct {
 	interval          time.Duration // 指针每隔多久往前移动一格
 	ticker            *time.Ticker  // 时间间隔
-	wheel             *Roulette     // 时间轮
-	rootWheel         *Roulette     // 最上层时间轮
+	wheel             *roulette     // 时间轮
+	rootWheel         *roulette     // 最上层时间轮
 	taskKeySet        mapset.Set    //taskKey集合
-	addTaskChannel    chan Task     // 新增任务channel
+	addTaskChannel    chan task     // 新增任务channel
 	removeTaskChannel chan int64    // 删除任务channel
 	stopChannel       chan bool     // 停止定时器channel
 }
@@ -330,24 +336,19 @@ type TimeWheelConfig struct {
 */
 // 工作大致说明
 // TimeWheel.start() 开始入口 ，通过监听*time.Ticker 每秒执行一次 TimeWheel.wheel.tickHandler() 这个方法
-// 该方法每次执行都会在时间上 +1秒 ，每一个时间指针都指向一个list.List 链表，链表内存有 Task 对象，被指针指到的链表，其内部所有的 Task 都到了
+// 该方法每次执行都会在时间上 +1秒 ，每一个时间指针都指向一个list.List 链表，链表内存有 task 对象，被指针指到的链表，其内部所有的 task 都到了
 // 执行时间，
 func NewTimeWheel(config *TimeWheelConfig) *TimeWheel {
 	var (
-		rootRoulette *Roulette // 根节点
-		snapRoulette *Roulette // 当前
-		lastRoulette *Roulette // 上一个轮盘
+		rootRoulette *roulette // 根节点
+		snapRoulette *roulette // 当前
+		lastRoulette *roulette // 上一个轮盘
 	)
-	if config.Model == "" {
-		config.Model = "second"
-	}
-	if config.TickInterval == 0 {
-		config.TickInterval = 1000000000
-	}
+	defaultConfig(config)
 
 	tw := &TimeWheel{
 		interval:          time.Duration(config.TickInterval),
-		addTaskChannel:    make(chan Task),
+		addTaskChannel:    make(chan task),
 		removeTaskChannel: make(chan int64),
 		stopChannel:       make(chan bool),
 		taskKeySet:        mapset.NewSet(),
@@ -386,6 +387,15 @@ func NewTimeWheel(config *TimeWheelConfig) *TimeWheel {
 	return tw
 }
 
+func defaultConfig(config *TimeWheelConfig) {
+	if config.Model == "" {
+		config.Model = "second"
+	}
+	if config.TickInterval == 0 {
+		config.TickInterval = 1000000000
+	}
+}
+
 // 开始
 func (tw *TimeWheel) start() {
 	for {
@@ -410,32 +420,32 @@ func (tw *TimeWheel) Stop() {
 }
 
 // 添加单次任务
-func (tw *TimeWheel) AppendOnceFunc(job func(interface{}), jobData interface{}, expiredTime interface{}) error {
+func (tw *TimeWheel) AppendOnceFunc(job func(interface{}), jobData interface{}, expiredTime interface{}) (taskKey int64, err error) {
 	timeParams, err := tw.expiredTimeParsing(expiredTime)
 	if err != nil {
-		return err
+		return
 	}
 	if timeParams > 10*365*24*60*60 {
 
-		return errors.New("时间最长不能超过十年")
+		return 0, errors.New("时间最长不能超过十年")
 	}
-	taskKey := tw.randomTaskKey()
+	taskKey = tw.randomTaskKey()
 	tw.addTask(job, jobData, timeParams, taskKey, nil)
-	return nil
+	return taskKey, nil
 }
 
 // 添加重复任务
-func (tw *TimeWheel) AppendCycleFunc(job func(interface{}), jobData interface{}, expiredTime Crontab) error {
+func (tw *TimeWheel) AppendCycleFunc(job func(interface{}), jobData interface{}, expiredTime Crontab) (taskKey int64, err error) {
 	timeParams, err := expiredTime.getNextExecTime(tw.getTimeDict())
 	if err != nil {
-		return err
+		return
 	}
 	if timeParams > 10*365*24*60*60 {
-		return errors.New("时间最长不能超过十年")
+		return 0, errors.New("时间最长不能超过十年")
 	}
-	taskKey := tw.randomTaskKey()
+	taskKey = tw.randomTaskKey()
 	tw.addTask(job, jobData, timeParams, taskKey, &expiredTime)
-	return nil
+	return
 }
 
 // 删除指定的回调任务
@@ -452,7 +462,7 @@ func (tw *TimeWheel) addTask(job func(interface{}), jobData interface{}, expired
 	var taskJob func()
 	if cycle != nil {
 		taskJob = func() {
-			fmt.Println(fmt.Sprintf("%s 执行 %s 函数", time.Now().Format("2006-01-02 15:04:05"), GetFunctionName(job)))
+			fmt.Println(fmt.Sprintf("%s 执行 %s 函数", time.Now().Format("2006-01-02 15:04:05"), getFunctionName(job)))
 			if !cycle.isCycle() {
 				// 如果下次调用时间每次都不相等的话，就需要重新获取到期时间
 				expiredTime, _ = cycle.getNextExecTime(tw.getTimeDict())
@@ -463,20 +473,20 @@ func (tw *TimeWheel) addTask(job func(interface{}), jobData interface{}, expired
 		}
 	} else {
 		taskJob = func() {
-			fmt.Println(fmt.Sprintf("%s执行 %s 函数", time.Now().Format("2006-01-02 15:04:05"), GetFunctionName(job)))
+			fmt.Println(fmt.Sprintf("%s执行 %s 函数", time.Now().Format("2006-01-02 15:04:05"), getFunctionName(job)))
 			tw.taskKeySet.Remove(taskKey)
 			job(jobData)
 		}
 	}
 	tw.taskKeySet.Add(taskKey)
-	//tw.wheel.addTask(&Task{
+	//tw.wheel.addTask(&task{
 	//	delay:        expiredTime,
 	//	rouletteSite: map[string]int64{},
 	//	key:          taskKey,
 	//	Job:          taskJob,
 	//	crontab:      cycle,
 	//})
-	tw.addTaskChannel <- Task{
+	tw.addTaskChannel <- task{
 		delay:        expiredTime,
 		rouletteSite: map[string]int64{},
 		key:          taskKey,
@@ -1028,7 +1038,7 @@ func timeRange(timeType string) (start, end int) {
 }
 
 // 获取函数名
-func GetFunctionName(i interface{}, seps ...rune) string {
+func getFunctionName(i interface{}, seps ...rune) string {
 	// 获取函数名称
 	fn := runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 

@@ -6,19 +6,18 @@ import (
 	"net"
 	"testTorrent/dht"
 	"testTorrent/dht/int160"
+	"testTorrent/timeWheel"
 	"testTorrent/torrent"
 	"testTorrent/torrent/metainfo"
 	"testTorrent/torrent/tracker"
-	"testTorrent/www"
 	"time"
 )
 
 func main() {
 	//pingNode("tracker4.itzmx.com:2710")
-	//www.GetUser()
-	aa := NewTimeWheel(&TimeWheelConfig{})
-	println(aa.wheel)
-	www.GetUser()
+	aa := timeWheel.NewTimeWheel(&timeWheel.TimeWheelConfig{})
+	//aa.AppendOnceFunc()
+	println(aa.PrintTime())
 }
 
 func NewTorrentClient() (client *torrent.Client) {
@@ -109,7 +108,7 @@ func TrackerGetPeers() {
 type CommunicationRecord struct {
 	// 时间段 一个小时 记录一个小时中有多少次请求交互 其中有我主动发送的数量，他主动发送的数量
 	// 数据格式 每个小时站6个字节，前2个字节 我主动发送的数量 然后他回复的数量，他发送的数量
-	// 如果联系多个小时交互数据都相同就压缩
+	// 如果连续多个小时交互数据都相同就压缩
 }
 type nodeInfo struct {
 	nodeData            dht.Node
