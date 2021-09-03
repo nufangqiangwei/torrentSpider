@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"golang.org/x/xerrors"
+	"github.com/pkg/errors"
 	"net"
 	"testTorrent/dht"
 	"testTorrent/dht/int160"
@@ -72,11 +72,11 @@ func ParsingTorrentFile(client *torrent.Client, fileName string) (*torrent.Torre
 	}
 	metaInfo, err := metainfo.LoadFromFile(fileName)
 	if err != nil {
-		return nil, xerrors.Errorf("error loading torrent file %q: %s\n", fileName, err)
+		return nil, errors.Errorf("error loading torrent file %q: %s\n", fileName, err)
 	}
 	t, err := client.AddTorrent(metaInfo)
 	if err != nil {
-		return nil, xerrors.Errorf("adding torrent: %w", err)
+		return nil, errors.Errorf("adding torrent: %w", err)
 	}
 	return t, nil
 }
